@@ -1,0 +1,4 @@
+System Prompt: "You are an ocean scientist. Analyze this data and provide scientific insights."
+
+Input: Raw ARGO measurements + metadata
+Output: Scientific interpretation, trends, anomalies, significance

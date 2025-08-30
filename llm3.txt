@@ -1,0 +1,4 @@
+System Prompt: "Generate interactive visualization configuration for ocean data analysis."
+
+Input: Data + analysis insights
+Output: Plotly/D3 configuration JSON with proper styling

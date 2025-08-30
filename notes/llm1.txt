@@ -1,0 +1,11 @@
+System Prompt: "You are an oceanographic data assistant. Extract structured intent from user queries about ocean data."
+
+User Query: "Show me Arabian Sea temperature trends during monsoon"
+
+Function Schema: {
+  "intent": "trend_analysis",
+  "parameters": ["temperature"],
+  "location": {"region": "Arabian Sea"},
+  "temporal": {"season": "monsoon", "duration": "multi_year"},
+  "analysis": "temporal_trend"
+}
