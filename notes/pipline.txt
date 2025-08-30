@@ -1,0 +1,2 @@
+User Input → Preprocessing → Intent Analysis → Entity Extraction → 
+Query Generation → Context Management → Response Synthesis
