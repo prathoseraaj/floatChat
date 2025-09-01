@@ -1,0 +1,12 @@
+TO run postgreSQL in DOCKER:
+
+            sudo docker run --name my-argo-db \
+            -e POSTGRES_PASSWORD=mysecretpassword \
+            -p 5432:5432 -d postgres
+
+INSTALL DBeaver:
+
+            sudo apt update
+            sudo apt install default-jdk -y   # DBeaver needs Java
+            wget -O dbeaver.deb https://dbeaver.io/files/dbeaver-ce_latest_amd64.deb
+            sudo apt install ./dbeaver.deb
