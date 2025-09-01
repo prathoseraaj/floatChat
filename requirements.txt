@@ -1,0 +1,5 @@
+xarray
+pandas
+sqlalchemy
+psycopg2-binary
+netcdf4
