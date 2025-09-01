@@ -18,20 +18,41 @@ for filename in os.listdir(data_directory):
         print(f"Processing {file_path}...")
         
         try:
-            # Open the NetCDF file
             with xr.open_dataset(file_path) as ds:
-                # Convert to a Pandas DataFrame
                 df = ds.to_dataframe().reset_index()
-                # Clean up the data (select columns, rename, etc.)
-                # This step is important! You need to make sure the columns are consistent.
-                # Example:
-                # df = df[['LATITUDE', 'LONGITUDE', 'DEEPEST_PRES', 'TEMP', 'PSAL']]
-                # df = df.rename(columns={'LATITUDE': 'latitude', 'LONGITUDE': 'longitude'})
+
+                # --- NEW: Define a function to decode bytes to string ---
+                def decode_if_bytes(b):
+                    if isinstance(b, bytes):
+                        # Decode bytes to a utf-8 string and remove trailing whitespace
+                        return b.decode('utf-8').strip()
+                    return b
+
+                # --- NEW: Apply the decoding function to byte columns ---
+                # PLATFORM_NUMBER and DATA_TYPE are common culprits. Add any others you find.
+                byte_columns = ['PLATFORM_NUMBER', 'DATA_TYPE']
+                for col in byte_columns:
+                    if col in df.columns:
+                        df[col] = df[col].apply(decode_if_bytes)
+
+                # --- The rest of your cleaning and renaming logic ---
+                core_columns = {
+                    'PLATFORM_NUMBER': 'platform_id',
+                    'CYCLE_NUMBER': 'cycle_number',
+                    'LATITUDE': 'latitude',
+                    'LONGITUDE': 'longitude',
+                    'JULD': 'timestamp',
+                    'PRES_ADJUSTED': 'pressure',
+                    'TEMP_ADJUSTED': 'temperature',
+                    'PSAL_ADJUSTED': 'salinity'
+                }
                 
-                # Write the DataFrame to the SQL table
-                # 'argo_profiles' is the name of the table we are creating.
-                # if_exists='append' adds the data from each new file to the table.
-                df.to_sql('argo_profiles', engine, if_exists='append', index=False)
+                df_clean = df[list(core_columns.keys())]
+                df_clean = df_clean.rename(columns=core_columns)
+                df_clean = df_clean.dropna()
+
+                # Write the CLEAN DataFrame to the SQL table
+                df_clean.to_sql('argo_profiles', engine, if_exists='append', index=False)
 
         except Exception as e:
             print(f"Could not process {file_path}. Error: {e}")
