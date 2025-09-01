@@ -1,5 +1,0 @@
-TO run postgreSQL in DOCKER:
-
-            sudo docker run --name my-argo-db \
-            -e POSTGRES_PASSWORD=mysecretpassword \
-            -p 5432:5432 -d postgres
