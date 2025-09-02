@@ -9,4 +9,4 @@ query = "SELECT * FROM argo_profiles LIMIT 1000"
 df = pd.read_sql(query, engine)
 
 st.title("Argo Profiles Table")
-st.write(df)
+st.write(df)  
