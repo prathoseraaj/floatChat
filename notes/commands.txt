@@ -10,3 +10,6 @@ INSTALL DBeaver:
             sudo apt install default-jdk -y   # DBeaver needs Java
             wget -O dbeaver.deb https://dbeaver.io/files/dbeaver-ce_latest_amd64.deb
             sudo apt install ./dbeaver.deb
+
+DATABASE BACKUP CMD:
+            docker exec -t my-argo-db pg_dumpall -c -U postgres > argo_database_backup.sql
