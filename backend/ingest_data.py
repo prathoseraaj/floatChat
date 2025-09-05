@@ -1,119 +1,106 @@
 import os
 import pandas as pd
 import xarray as xr
-import numpy as np
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, String, Integer, Float, DateTime
 
+# --- Configuration ---
 DB_URL = "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
 DATA_DIRECTORY = "./argo_data/"
 TABLE_NAME = "argo_profiles"
 YEAR_FILTER = 2024
 
-CORE_COLUMNS = {
-    'PLATFORM_NUMBER': 'platform_id',
-    'CYCLE_NUMBER': 'cycle_number',
-    'LATITUDE': 'latitude',
-    'LONGITUDE': 'longitude',
-    'JULD': 'timestamp',
-    'PRES_ADJUSTED': 'pressure',
-    'TEMP_ADJUSTED': 'temperature',
-    'PSAL_ADJUSTED': 'salinity'
-}
-
 engine = create_engine(DB_URL)
 
-def decode_if_bytes(val):
-    if isinstance(val, bytes):
-        return val.decode('utf-8').strip()
-    return val
+def get_best_available_column(ds, potential_names):
+    """Finds the best available variable name from a list."""
+    for name in potential_names:
+        if name in ds.variables and pd.notna(ds[name].values).any():
+            return name
+    return None
 
-def extract_profiles(ds):
-    # Determine the number of profiles
-    if 'N_PROF' in ds.dims:
-        n_prof = ds.dims['N_PROF']
-    elif 'N_PROF' in ds.variables:
-        n_prof = ds['N_PROF'].values[0]
-    else:
-        n_prof = 1  # fallback
+def ingest_data():
+    """Finds, processes, and ingests ARGO .nc files into the database."""
+    all_clean_dataframes = []
+    
+    nc_files = [f for f in os.listdir(DATA_DIRECTORY) if f.endswith('.nc')]
+    if not nc_files:
+        print(f"❌ No .nc files found in '{DATA_DIRECTORY}'.")
+        return
 
-    records = []
-    for prof in range(n_prof):
-        try:
-            record = {}
-            for nc_col, db_col in CORE_COLUMNS.items():
-                var = ds[nc_col]
-                # 1D variable (per profile)
-                if var.ndim == 1:
-                    val = var.values[prof]
-                # 2D variable (profile x level), take first (surface) level or mean
-                elif var.ndim == 2:
-                    arr = var.values[prof]
-                    # For pressure/temperature/salinity, get arrays (keep as is)
-                    if nc_col in ['PRES_ADJUSTED', 'TEMP_ADJUSTED', 'PSAL_ADJUSTED']:
-                        val = arr
-                    else:
-                        val = arr[0] if arr.size else np.nan
-                else:
-                    val = var.values
-                # Decode if bytes
-                if isinstance(val, np.ndarray):
-                    if val.dtype.type is np.bytes_:
-                        val = [decode_if_bytes(v) for v in val]
-                elif isinstance(val, bytes):
-                    val = decode_if_bytes(val)
-                record[db_col] = val
-            # JULD handling
-            juld = record['timestamp']
-            if isinstance(juld, np.ndarray) and juld.size == 1:
-                juld = juld[0]
-            # Convert timestamp
-            if np.issubdtype(type(juld), np.number):
-                timestamp = pd.to_datetime(juld, origin='1950-01-01', unit='D', errors='coerce')
-            else:
-                timestamp = pd.to_datetime(juld, errors='coerce')
-            record['timestamp'] = timestamp
-            # Only keep profiles in the desired year
-            if pd.notnull(timestamp) and getattr(timestamp, 'year', 0) >= YEAR_FILTER:
-                records.append(record)
-        except Exception as e:
-            print(f"Error extracting profile {prof}: {e}")
-    return records
+    print(f"Found {len(nc_files)} files to process...")
 
-def process_nc_file(file_path):
-    try:
-        with xr.open_dataset(file_path) as ds:
-            records = extract_profiles(ds)
-            if not records:
-                print(f"No {YEAR_FILTER}+ profiles in {file_path}")
-                return None
-            # Flatten arrays (like pressure/temp/salinity) as mean value for SQL ingest, or customize as needed
-            for rec in records:
-                for key in ['pressure', 'temperature', 'salinity']:
-                    arr = rec[key]
-                    if isinstance(arr, np.ndarray):
-                        arr = arr[~np.isnan(arr)]
-                        rec[key] = float(arr.mean()) if arr.size else np.nan
-            df = pd.DataFrame(records)
-            df = df.dropna(subset=['timestamp'])  # Ensure valid time
-            print(f"Ingesting {len(df)} profiles from {file_path}")
-            return df
-    except Exception as e:
-        print(f"Could not process {file_path}. Error: {type(e).__name__}: {e}")
-        return None
-
-def main():
-    files = [fname for fname in os.listdir(DATA_DIRECTORY) if fname.endswith("_prof.nc")]
-    print(f"Found {len(files)} profile files in {DATA_DIRECTORY}")
-
-    n_total = 0
-    for filename in files:
+    for filename in nc_files:
         file_path = os.path.join(DATA_DIRECTORY, filename)
-        print(f"Processing {file_path}...")
-        df_clean = process_nc_file(file_path)
-        if df_clean is not None and not df_clean.empty:
-            df_clean.to_sql(TABLE_NAME, engine, if_exists='append', index=False)
-            n_total += len(df_clean)
-    print(f"Data ingestion complete! Total rows ingested: {n_total}")
+        print(f"Processing: {filename}...")
+
+        try:
+            with xr.open_dataset(file_path, decode_times=False) as ds:
+                col_map = {
+                    'platform_id': get_best_available_column(ds, ['PLATFORM_NUMBER']),
+                    'cycle_number': get_best_available_column(ds, ['CYCLE_NUMBER']),
+                    'latitude': get_best_available_column(ds, ['LATITUDE']),
+                    'longitude': get_best_available_column(ds, ['LONGITUDE']),
+                    'timestamp': get_best_available_column(ds, ['JULD']),
+                    'pressure': get_best_available_column(ds, ['PRES_ADJUSTED', 'PRES']),
+                    'temperature': get_best_available_column(ds, ['TEMP_ADJUSTED', 'TEMP']),
+                    'salinity': get_best_available_column(ds, ['PSAL_ADJUSTED', 'PSAL'])
+                }
+
+                found_cols = {k: v for k, v in col_map.items() if v is not None}
+                
+                if len(found_cols) < 5:
+                    print(f"  -> Skipping {filename}: Not enough core data columns found.")
+                    continue
+                    
+                df = ds[list(found_cols.values())].to_dataframe().reset_index()
+                rename_map = {v: k for k, v in found_cols.items()}
+                df = df.rename(columns=rename_map)
+
+                for col in df.columns:
+                    if df[col].dtype == 'object' and len(df[col].dropna()) > 0:
+                        if isinstance(df[col].dropna().iloc[0], bytes):
+                            df[col] = df[col].str.decode('utf-8').str.strip()
+
+                if 'timestamp' in df.columns:
+                    ref_date = ds.attrs.get('REFERENCE_DATE_TIME', '19500101000000')
+                    origin_date = pd.to_datetime(ref_date, format='%Y%m%d%H%M%S')
+                    df['timestamp'] = pd.to_timedelta(df['timestamp'], unit='D') + origin_date
+
+                df = df[df['timestamp'].dt.year >= YEAR_FILTER]
+                df = df.dropna(subset=['pressure', 'temperature', 'salinity'])
+
+                if not df.empty:
+                    print(f"  -> Found {len(df)} valid rows.")
+                    all_clean_dataframes.append(df)
+                else:
+                    print(f"  -> No valid {YEAR_FILTER}+ data rows found in this file after cleaning.")
+
+        except Exception as e:
+            print(f"  -> ERROR processing {filename}: {e}")
+
+    if not all_clean_dataframes:
+        print("\n❌ No valid data was ingested from any of the files.")
+        return
+
+    final_df = pd.concat(all_clean_dataframes, ignore_index=True)
+    print(f"\nTotal valid rows to ingest across all files: {len(final_df)}")
+
+    # --- THIS IS THE FIX ---
+    # Define the specific data types for the SQL table using SQLAlchemy types
+    sql_types = {
+        "platform_id": String,
+        "cycle_number": Integer,
+        "latitude": Float,
+        "longitude": Float,
+        "timestamp": DateTime,
+        "pressure": Float,
+        "temperature": Float,
+        "salinity": Float
+    }
+    
+    final_df.to_sql(TABLE_NAME, engine, if_exists='replace', index=False, dtype=sql_types)
+    print("✅ Data ingestion complete!")
+
 
 if __name__ == "__main__":
-    main()
+    ingest_data()
