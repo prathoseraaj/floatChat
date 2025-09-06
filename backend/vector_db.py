@@ -12,3 +12,5 @@ genai.configure(api_key=gemini_api_key)
 
 google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(api_key=gemini_api_key)
 
+client = chromadb.PersistentClient(path='chroma_db')
+
