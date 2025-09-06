@@ -32,3 +32,5 @@ The table is clean and contains no null values.
 """
 
 collection.add(documents=[schema_description],ids=["argo_schema_main"])
+
+print("Vector database has been set up and schema has added")
