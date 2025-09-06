@@ -30,3 +30,5 @@ This table contains oceanographic data from ARGO floats and has the following co
 - salinity: The water salinity in Practical Salinity Units.
 The table is clean and contains no null values.
 """
+
+collection.add(documents=[schema_description],ids=["argo_schema_main"])
