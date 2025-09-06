@@ -10,3 +10,5 @@ gemini_api_key = os.getenv("gemini_api_key")
 
 genai.configure(api_key=gemini_api_key)
 
+google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(api_key=gemini_api_key)
+
