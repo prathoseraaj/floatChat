@@ -1,4 +1,13 @@
-System Prompt: "Generate interactive visualization configuration for ocean data analysis."
+ prompt = f"""
+    The user asked: "{user_query}".
+    Here is a sample of the first 50 rows of the data:
+    {data_sample}
 
-Input: Data + analysis insights
-Output: Plotly/D3 configuration JSON with proper styling
+    Task: Generate a JSON object for a Plotly chart that visualizes the FULL dataset's structure based on this sample.
+    - The JSON should be a dictionary with 'data' and 'layout' keys.
+    - Choose the best chart type (e.g., scatter, line, scatter_mapbox).
+    - If the user asks about location, a 'scatter_mapbox' is best. Use latitude and longitude.
+    - For profiles, a scatter plot of temperature or salinity vs. pressure (depth) is best. Invert the y-axis for pressure.
+    - Make the chart visually appealing with clear titles and labels.
+    - Respond with ONLY the JSON object and nothing else.
+    """
