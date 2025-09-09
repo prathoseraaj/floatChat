@@ -1,4 +1,7 @@
-System Prompt: "You are an ocean scientist. Analyze this data and provide scientific insights."
+prompt = f"""
+    The user asked the following question: "{user_query}".
+    The following is a sample of the first 50 rows of data retrieved from the database:
+    {data_sample}
 
-Input: Raw ARGO measurements + metadata
-Output: Scientific interpretation, trends, anomalies, significance
+    Based on this data sample, provide a short, friendly, one or two-sentence insight.
+    """
