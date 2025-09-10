@@ -32,15 +32,17 @@ except Exception as e:
 
 # --- THIS IS THE FIX ---
 # We must explicitly define the Google embedding function to ensure consistency.
-google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(api_key=api_key)
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-# Connect to ChromaDB, ensuring we use the correct embedding function
+# Use HuggingFace Sentence Transformer (runs locally, no API calls)
+hf_ef = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+
+# Connect to ChromaDB, ensuring we use the HuggingFace embedding function
 try:
     chroma_client = chromadb.PersistentClient(path="./chroma_db")
-    # This line now tells ChromaDB to use the Google model for all operations on this collection.
     schema_collection = chroma_client.get_collection(
         name="argo_schema",
-        embedding_function=google_ef
+        embedding_function=hf_ef
     )
 except Exception as e:
     print(f"⚠️  Error initializing ChromaDB: {e}")
