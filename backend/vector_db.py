@@ -6,15 +6,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-gemini_api_key = os.getenv("gemini_api_key")
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-genai.configure(api_key=gemini_api_key)
-
-google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(api_key=gemini_api_key)
+hf_ef = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 
 client = chromadb.PersistentClient(path='chroma_db')
+collection = client.get_or_create_collection(name='argo_schema', embedding_function=hf_ef)
 
-collection = client.get_or_create_collection(name='argo_schema', embedding_function=google_ef)
 
 #discription this is for our knowledge
 schema_description = """
