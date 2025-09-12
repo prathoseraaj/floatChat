@@ -16,3 +16,5 @@ DATABASE BACKUP CMD:
 
 
             uvicorn main:app --reload
+
+            Salinity data from January 2024 to March 2024 take one data per day

@@ -36,7 +36,7 @@ const SqlQueryDisplay = ({ sqlQuery, isVisible, onToggle }) => {
         </div>
       </div>
       {isVisible && (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 max-h-48 overflow-y-auto">
           <div className="bg-slate-900 dark:bg-slate-950 p-4 rounded-lg overflow-x-auto">
             <pre className="text-sm text-green-400 font-mono">
               <code>{sqlQuery}</code>
@@ -55,9 +55,9 @@ const Dashboard: React.FC<DashboardProps> = ({ plotlyJson, sqlQuery }) => {
   const hasData = plotlyJson;
 
   return (
-    <div className="h-full flex flex-col p-6">
+    <div className="h-full flex flex-col p-6 overflow-hidden">
       {/* Modern Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-6 flex-shrink-0">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
             <Activity className="text-white" size={20} />
@@ -73,36 +73,41 @@ const Dashboard: React.FC<DashboardProps> = ({ plotlyJson, sqlQuery }) => {
         </div>
       </div>
 
-      {/* Main Visualization Area - Chart Only */}
-      <div className="flex-1 min-h-0 mb-6">
-        {hasData ? (
-          <div className="h-full backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 rounded-xl border border-white/30 dark:border-slate-600/30 shadow-lg overflow-hidden">
-            <ChartDisplay plotlyJson={plotlyJson} />
-          </div>
-        ) : (
-          // Empty State
-          <div className="h-full flex items-center justify-center backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 rounded-xl border border-white/30 dark:border-slate-600/30 shadow-lg">
-            <div className="text-center py-12 px-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <TrendingUp className="text-white" size={24} />
-              </div>
-              <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
-                No Data Yet
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400 max-w-md">
-                Start a conversation to see beautiful visualizations and insights from your Indian Ocean data queries.
-              </p>
+      {/* Main Content Area - Chart and SQL */}
+      <div className="flex-1 flex flex-col min-h-0 gap-4">
+        {/* Chart Visualization Area - Fixed Height */}
+        <div className="flex-1 min-h-0">
+          {hasData ? (
+            <div className="h-full backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 rounded-xl border border-white/30 dark:border-slate-600/30 shadow-lg overflow-hidden">
+              <ChartDisplay plotlyJson={plotlyJson} />
             </div>
-          </div>
-        )}
-      </div>
+          ) : (
+            // Empty State
+            <div className="h-full flex items-center justify-center backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 rounded-xl border border-white/30 dark:border-slate-600/30 shadow-lg">
+              <div className="text-center py-12 px-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <TrendingUp className="text-white" size={24} />
+                </div>
+                <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                  No Data Yet
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400 max-w-md">
+                  Start a conversation to see beautiful visualizations and insights from your Indian Ocean data queries.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
 
-      {/* SQL Query Section */}
-      <SqlQueryDisplay
-        sqlQuery={sqlQuery}
-        isVisible={showSqlQuery}
-        onToggle={() => setShowSqlQuery(!showSqlQuery)}
-      />
+        {/* SQL Query Section - Only expands when needed */}
+        <div className="flex-shrink-0">
+          <SqlQueryDisplay
+            sqlQuery={sqlQuery}
+            isVisible={showSqlQuery}
+            onToggle={() => setShowSqlQuery(!showSqlQuery)}
+          />
+        </div>
+      </div>
     </div>
   );
 };
