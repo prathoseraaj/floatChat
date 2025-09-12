@@ -58,12 +58,6 @@ app = FastAPI(
     description="API for querying ARGO float data using natural language."
 )
 
-# --- FastAPI App ---
-app = FastAPI(
-    title="FloatChat API",
-    description="API for querying ARGO float data using natural language."
-)
-
 # --- ADD CORS MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
@@ -75,11 +69,6 @@ app.add_middleware(
 )
 
 # --- Pydantic Models for API Validation ---
-class LocationData(BaseModel):
-    lat: float
-    lon: float
-    label: str | None = None
-
 class ChatQuery(BaseModel):
     query: str
 
@@ -87,7 +76,6 @@ class ChatResponse(BaseModel):
     insights: str
     plotly_json: dict | None = None
     sql_query: str
-    locations: list[LocationData] | None = None
 
 # --- Core RAG Functions ---
 
@@ -104,8 +92,16 @@ def generate_sql_from_query(user_query: str) -> str:
     - The table is named 'argo_profiles'.
     - The 'platform_id' column is of type TEXT and requires single quotes in a WHERE clause.
 
-    --- IMPORTANT RULE ---
+    --- IMPORTANT RULES ---
     - When a user asks for 'locations', 'map', or 'trajectory', you MUST use GROUP BY platform_id, cycle_number, latitude, longitude to get a single, unique point for each profile.
+    
+    --- DATA SAMPLING RULES ---
+    - If the user does NOT specify a date range, time period, or specific year/month, and asks for visualizations (graphs, plots, charts):
+      * Use TABLESAMPLE SYSTEM (5) or LIMIT 1000 to sample data for better visualization
+      * Or use WHERE MOD(EXTRACT(DOY FROM timestamp), 30) = 0 to get one sample per month
+      * This prevents overwhelming visualizations with 40,000+ data points
+    - If the user specifies dates, years, or time ranges, return all data in that range
+    - For summary statistics (count, avg, min, max), don't limit the data
 
     Schema:
     {schema_context}
@@ -124,33 +120,37 @@ def execute_sql_query(sql_query: str) -> pd.DataFrame:
     with engine.connect() as connection:
         return pd.read_sql_query(text(sql_query), connection)
 
-def extract_locations_from_data(data_df: pd.DataFrame, user_query: str) -> list[LocationData] | None:
-    """Extract location data if the query involves geographic data."""
-    if data_df.empty:
-        return None
+def sample_large_dataset(data: pd.DataFrame, user_query: str) -> pd.DataFrame:
+    """Sample large datasets for better visualization when no date filter is specified."""
     
-    # Check if we have lat/lon columns
-    if 'latitude' in data_df.columns and 'longitude' in data_df.columns:
-        locations = []
-        for _, row in data_df.head(100).iterrows():  # Limit for performance
-            if pd.notna(row['latitude']) and pd.notna(row['longitude']):
-                # Create a label based on available data
-                label_parts = []
-                if 'platform_id' in row and pd.notna(row['platform_id']):
-                    label_parts.append(f"Platform {row['platform_id']}")
-                if 'cycle_number' in row and pd.notna(row['cycle_number']):
-                    label_parts.append(f"Cycle {row['cycle_number']}")
-                
-                label = " - ".join(label_parts) if label_parts else f"Lat: {row['latitude']:.2f}, Lon: {row['longitude']:.2f}"
-                
-                locations.append(LocationData(
-                    lat=float(row['latitude']),
-                    lon=float(row['longitude']),
-                    label=label
-                ))
-        return locations if locations else None
+    # If dataset is small enough, return as is
+    if len(data) <= 1000:
+        return data
     
-    return None
+    # Check if user specified date/time constraints
+    time_keywords = ['year', 'month', 'date', 'time', 'recent', 'latest', 'last', 'since', 'before', 'after', 'between']
+    has_time_filter = any(keyword in user_query.lower() for keyword in time_keywords)
+    
+    # If user specified time constraints, don't sample
+    if has_time_filter:
+        return data
+    
+    print(f"Large dataset detected ({len(data)} rows). Sampling for better visualization...")
+    
+    # Sample strategy 1: If timestamp column exists, take every Nth row based on time
+    if 'timestamp' in data.columns:
+        # Sort by timestamp and take every Nth row to get even distribution
+        data_sorted = data.sort_values('timestamp')
+        step = max(1, len(data) // 1000)  # Sample to get ~1000 points
+        sampled_data = data_sorted.iloc[::step]
+        print(f"Time-based sampling: {len(sampled_data)} rows selected")
+        return sampled_data
+    
+    # Sample strategy 2: Random sampling if no timestamp
+    sample_size = min(1000, len(data))
+    sampled_data = data.sample(n=sample_size, random_state=42)
+    print(f"Random sampling: {len(sampled_data)} rows selected")
+    return sampled_data
 
 def generate_insights(user_query: str, data: pd.DataFrame) -> str:
     """LLM Call #2: Generates textual insights from the data."""
@@ -171,7 +171,7 @@ def generate_insights(user_query: str, data: pd.DataFrame) -> str:
     return response.text.strip()
 
 def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
-    """Generate Plotly JSON visualization with better defaults."""
+    """Generate Plotly JSON visualization (without map/location plots)."""
     if data.empty or len(data) < 2:
         return None
 
@@ -179,50 +179,47 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
         columns = data.columns.tolist()
         print(f"Available columns: {columns}")
 
-        # 1. Map Visualization
-        if "latitude" in columns and "longitude" in columns:
-            plot_data = {
-                "data": [{
-                    "type": "scattermapbox",
-                    "lat": data["latitude"].tolist(),
-                    "lon": data["longitude"].tolist(),
-                    "mode": "markers",
-                    "marker": {"size": 8, "color": "blue"},
-                    "name": "Float Locations"
-                }],
-                "layout": {
-                    "title": "Float Locations",
-                    "mapbox": {"style": "open-street-map", "center": {"lat": 0, "lon": 0}, "zoom": 1},
-                    "height": 500
-                }
-            }
-
-        # 2. Time Series (auto-detect datetime column)
-        elif any(pd.api.types.is_datetime64_any_dtype(data[col]) for col in columns):
+        # 1. Time Series (auto-detect datetime column)
+        if any(pd.api.types.is_datetime64_any_dtype(data[col]) for col in columns):
             datetime_col = [col for col in columns if pd.api.types.is_datetime64_any_dtype(data[col])][0]
             numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
             if numeric_cols:
+                # Adjust visualization style based on data size
+                data_size = len(data)
+                if data_size > 500:
+                    mode = "lines"  # Only lines for large datasets
+                    marker_size = 3
+                elif data_size > 100:
+                    mode = "lines+markers"
+                    marker_size = 4
+                else:
+                    mode = "lines+markers"
+                    marker_size = 6
+                
                 plot_data = {
                     "data": [{
                         "type": "scatter",
                         "x": data[datetime_col].tolist(),
                         "y": data[numeric_cols[0]].tolist(),
-                        "mode": "lines+markers",
-                        "name": f"{numeric_cols[0]} over time",
-                        "line": {"color": "rgb(31, 119, 180)"},
-                        "marker": {"size": 6}
+                        "mode": mode,
+                        "name": f"{numeric_cols[0]} over time ({data_size} points)",
+                        "line": {"color": "rgb(31, 119, 180)", "width": 2},
+                        "marker": {"size": marker_size, "color": "rgb(31, 119, 180)"}
                     }],
                     "layout": {
-                        "title": f"{numeric_cols[0]} over {datetime_col}",
+                        "title": f"{numeric_cols[0]} over {datetime_col} (Sampled: {data_size} points)",
                         "xaxis": {"title": datetime_col},
                         "yaxis": {"title": numeric_cols[0]},
-                        "height": 500
+                        "height": 500,
+                        "showlegend": True
                     }
                 }
+                print(f"Generated plot: {plot_data['layout']['title']}")
+                return plot_data
             else:
                 return None
 
-        # 3. Temperature vs Pressure Profile
+        # 2. Temperature vs Pressure Profile
         elif "pressure" in columns and any(temp_col in columns for temp_col in ["temperature", "daily_average_temperature"]):
             temp_col = "temperature" if "temperature" in columns else "daily_average_temperature"
             plot_data = {
@@ -242,8 +239,10 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                     "height": 500
                 }
             }
+            print(f"Generated plot: {plot_data['layout']['title']}")
+            return plot_data
 
-        # 4. Default numeric scatter or line
+        # 3. Default numeric scatter or line
         else:
             numeric_cols = data.select_dtypes(include=["number"]).columns.tolist()
             if len(numeric_cols) >= 2:
@@ -262,11 +261,13 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                         "height": 500
                     }
                 }
+                print(f"Generated plot: {plot_data['layout']['title']}")
+                return plot_data
             else:
                 return None
 
-        print(f"Generated plot: {plot_data['layout']['title']}")
-        return plot_data
+        # If nothing matches
+        return None
 
     except Exception as e:
         print(f"Error generating visualization: {e}")
@@ -287,15 +288,17 @@ def handle_chat_query(chat_query: ChatQuery):
     try:
         sql_query = generate_sql_from_query(chat_query.query)
         data_df = execute_sql_query(sql_query)
-        insights = generate_insights(chat_query.query, data_df)
-        plotly_json = generate_visualization(chat_query.query, data_df)
-        locations = extract_locations_from_data(data_df, chat_query.query)
+        
+        # Sample large datasets for better visualization
+        sampled_data_df = sample_large_dataset(data_df, chat_query.query)
+        
+        insights = generate_insights(chat_query.query, data_df)  # Use full data for insights
+        plotly_json = generate_visualization(chat_query.query, sampled_data_df)  # Use sampled data for visualization
         
         return ChatResponse(
             insights=insights,
             plotly_json=plotly_json,
-            sql_query=sql_query,
-            locations=locations
+            sql_query=sql_query
         )
     except Exception as e:
         print(f"An error occurred in the chat endpoint: {e}")
