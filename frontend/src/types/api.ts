@@ -1,26 +1,14 @@
-export interface ChatRequest {
-  query: string;
-}
+// types/api.ts
 
-export interface PlotlyData {
-  type: string;
-  [key: string]: any;
-}
-
-export interface PlotlyLayout {
-  title?: string;
-  [key: string]: any;
+export interface LocationData {
+  lat: number;
+  lon: number;
+  label?: string;
 }
 
 export interface PlotlyJson {
-  data: PlotlyData[];
-  layout: PlotlyLayout;
-}
-
-export interface ChatResponse {
-  insights: string;
-  plotly_json: PlotlyJson | null;
-  sql_query: string;
+  data: any[];
+  layout: any;
 }
 
 export interface Message {
@@ -28,6 +16,17 @@ export interface Message {
   type: 'user' | 'ai';
   content: string;
   timestamp: Date;
-  plotlyJson?: PlotlyJson | null;
+  plotlyJson?: PlotlyJson;
   sqlQuery?: string;
+}
+
+export interface ChatQuery {
+  query: string;
+}
+
+export interface ChatResponse {
+  insights: string;
+  plotly_json: PlotlyJson | null;
+  sql_query: string;
+  locations?: LocationData[] | null;
 }

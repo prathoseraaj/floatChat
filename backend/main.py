@@ -58,16 +58,28 @@ app = FastAPI(
     description="API for querying ARGO float data using natural language."
 )
 
+# --- FastAPI App ---
+app = FastAPI(
+    title="FloatChat API",
+    description="API for querying ARGO float data using natural language."
+)
+
 # --- ADD CORS MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:3000"], 
+    # 👇 ADD YOUR FRONTEND'S ADDRESS TO THIS LIST
+    allow_origins=["http://localhost:8081", "http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:8080"], 
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"], # You can be more specific, e.g., ["GET", "POST"]
     allow_headers=["*"],
 )
 
 # --- Pydantic Models for API Validation ---
+class LocationData(BaseModel):
+    lat: float
+    lon: float
+    label: str | None = None
+
 class ChatQuery(BaseModel):
     query: str
 
@@ -75,6 +87,7 @@ class ChatResponse(BaseModel):
     insights: str
     plotly_json: dict | None = None
     sql_query: str
+    locations: list[LocationData] | None = None
 
 # --- Core RAG Functions ---
 
@@ -111,6 +124,34 @@ def execute_sql_query(sql_query: str) -> pd.DataFrame:
     with engine.connect() as connection:
         return pd.read_sql_query(text(sql_query), connection)
 
+def extract_locations_from_data(data_df: pd.DataFrame, user_query: str) -> list[LocationData] | None:
+    """Extract location data if the query involves geographic data."""
+    if data_df.empty:
+        return None
+    
+    # Check if we have lat/lon columns
+    if 'latitude' in data_df.columns and 'longitude' in data_df.columns:
+        locations = []
+        for _, row in data_df.head(100).iterrows():  # Limit for performance
+            if pd.notna(row['latitude']) and pd.notna(row['longitude']):
+                # Create a label based on available data
+                label_parts = []
+                if 'platform_id' in row and pd.notna(row['platform_id']):
+                    label_parts.append(f"Platform {row['platform_id']}")
+                if 'cycle_number' in row and pd.notna(row['cycle_number']):
+                    label_parts.append(f"Cycle {row['cycle_number']}")
+                
+                label = " - ".join(label_parts) if label_parts else f"Lat: {row['latitude']:.2f}, Lon: {row['longitude']:.2f}"
+                
+                locations.append(LocationData(
+                    lat=float(row['latitude']),
+                    lon=float(row['longitude']),
+                    label=label
+                ))
+        return locations if locations else None
+    
+    return None
+
 def generate_insights(user_query: str, data: pd.DataFrame) -> str:
     """LLM Call #2: Generates textual insights from the data."""
     if data.empty:
@@ -130,89 +171,89 @@ def generate_insights(user_query: str, data: pd.DataFrame) -> str:
     return response.text.strip()
 
 def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
-    """LLM Call #3: Generates Plotly JSON for visualization."""
+    """Generate Plotly JSON visualization with better defaults."""
     if data.empty or len(data) < 2:
         return None
 
-    # Create the visualization based on the data structure
     try:
-        # Check available columns
         columns = data.columns.tolist()
         print(f"Available columns: {columns}")
-        
-        # Determine visualization type based on query and columns
-        if any(col in columns for col in ['latitude', 'longitude']) and 'location' in user_query.lower():
-            # Map visualization
+
+        # 1. Map Visualization
+        if "latitude" in columns and "longitude" in columns:
             plot_data = {
                 "data": [{
                     "type": "scattermapbox",
-                    "lat": data['latitude'].tolist() if 'latitude' in columns else [],
-                    "lon": data['longitude'].tolist() if 'longitude' in columns else [],
+                    "lat": data["latitude"].tolist(),
+                    "lon": data["longitude"].tolist(),
                     "mode": "markers",
                     "marker": {"size": 8, "color": "blue"},
                     "name": "Float Locations"
                 }],
                 "layout": {
                     "title": "Float Locations",
-                    "mapbox": {
-                        "style": "open-street-map",
-                        "center": {"lat": 0, "lon": 0},
-                        "zoom": 1
-                    },
+                    "mapbox": {"style": "open-street-map", "center": {"lat": 0, "lon": 0}, "zoom": 1},
                     "height": 500
                 }
             }
-        elif 'measurement_date' in columns and 'daily_average_temperature' in columns:
-            # Time series visualization for temperature
-            plot_data = {
-                "data": [{
-                    "type": "scatter",
-                    "x": data['measurement_date'].tolist(),
-                    "y": data['daily_average_temperature'].tolist(),
-                    "mode": "lines+markers",
-                    "name": "Temperature",
-                    "line": {"color": "rgb(31, 119, 180)"},
-                    "marker": {"size": 6}
-                }],
-                "layout": {
-                    "title": "Daily Average Temperature for 2025",
-                    "xaxis": {"title": "Date"},
-                    "yaxis": {"title": "Temperature (°C)"},
-                    "height": 500,
-                    "showlegend": True
+
+        # 2. Time Series (auto-detect datetime column)
+        elif any(pd.api.types.is_datetime64_any_dtype(data[col]) for col in columns):
+            datetime_col = [col for col in columns if pd.api.types.is_datetime64_any_dtype(data[col])][0]
+            numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+            if numeric_cols:
+                plot_data = {
+                    "data": [{
+                        "type": "scatter",
+                        "x": data[datetime_col].tolist(),
+                        "y": data[numeric_cols[0]].tolist(),
+                        "mode": "lines+markers",
+                        "name": f"{numeric_cols[0]} over time",
+                        "line": {"color": "rgb(31, 119, 180)"},
+                        "marker": {"size": 6}
+                    }],
+                    "layout": {
+                        "title": f"{numeric_cols[0]} over {datetime_col}",
+                        "xaxis": {"title": datetime_col},
+                        "yaxis": {"title": numeric_cols[0]},
+                        "height": 500
+                    }
                 }
-            }
-        elif 'pressure' in columns and any(temp_col in columns for temp_col in ['temperature', 'daily_average_temperature']):
-            # Profile visualization (temperature vs pressure)
-            temp_col = 'temperature' if 'temperature' in columns else 'daily_average_temperature'
+            else:
+                return None
+
+        # 3. Temperature vs Pressure Profile
+        elif "pressure" in columns and any(temp_col in columns for temp_col in ["temperature", "daily_average_temperature"]):
+            temp_col = "temperature" if "temperature" in columns else "daily_average_temperature"
             plot_data = {
                 "data": [{
                     "type": "scatter",
                     "x": data[temp_col].tolist(),
-                    "y": data['pressure'].tolist(),
-                    "mode": "markers",
+                    "y": data["pressure"].tolist(),
+                    "mode": "lines+markers",
                     "name": "Temperature Profile",
-                    "marker": {"size": 6, "color": "red"}
+                    "line": {"color": "red"},
+                    "marker": {"size": 6}
                 }],
                 "layout": {
                     "title": "Temperature vs Pressure Profile",
                     "xaxis": {"title": "Temperature (°C)"},
-                    "yaxis": {"title": "Pressure (dbar)", "autorange": "reversed"},  # Invert y-axis for depth
+                    "yaxis": {"title": "Pressure (dbar)", "autorange": "reversed"},
                     "height": 500
                 }
             }
+
+        # 4. Default numeric scatter or line
         else:
-            # Default scatter plot using first two numeric columns
-            numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+            numeric_cols = data.select_dtypes(include=["number"]).columns.tolist()
             if len(numeric_cols) >= 2:
                 plot_data = {
                     "data": [{
                         "type": "scatter",
                         "x": data[numeric_cols[0]].tolist(),
                         "y": data[numeric_cols[1]].tolist(),
-                        "mode": "markers",
-                        "name": "Data Points",
-                        "marker": {"size": 6}
+                        "mode": "lines+markers",
+                        "name": "Data Relationship"
                     }],
                     "layout": {
                         "title": f"{numeric_cols[1]} vs {numeric_cols[0]}",
@@ -224,6 +265,7 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
             else:
                 return None
 
+        print(f"Generated plot: {plot_data['layout']['title']}")
         return plot_data
 
     except Exception as e:
@@ -247,11 +289,13 @@ def handle_chat_query(chat_query: ChatQuery):
         data_df = execute_sql_query(sql_query)
         insights = generate_insights(chat_query.query, data_df)
         plotly_json = generate_visualization(chat_query.query, data_df)
+        locations = extract_locations_from_data(data_df, chat_query.query)
         
         return ChatResponse(
             insights=insights,
             plotly_json=plotly_json,
-            sql_query=sql_query
+            sql_query=sql_query,
+            locations=locations
         )
     except Exception as e:
         print(f"An error occurred in the chat endpoint: {e}")

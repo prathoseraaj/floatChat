@@ -5,12 +5,42 @@ import { Message, PlotlyJson } from '@/types/api';
 import { sendChatQuery } from '@/api/chatApi';
 import { useToast } from '@/hooks/use-toast';
 
+
+// Define LocationData interface
+interface LocationData {
+  lat: number;
+  lon: number;
+  label?: string;
+}
+
 const Index: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPlotlyJson, setCurrentPlotlyJson] = useState<PlotlyJson | null>(null);
   const [currentSqlQuery, setCurrentSqlQuery] = useState<string | null>(null);
+  const [currentLocations, setCurrentLocations] = useState<LocationData[] | null>(null);
   const { toast } = useToast();
+
+  const extractLocationsFromResponse = (response: any): LocationData[] | null => {
+    // First, check if locations were explicitly provided in the response
+    if (response.locations && response.locations.length > 0) {
+      return response.locations;
+    }
+
+    // Then, check if it's a mapbox plot with lat/lon data
+    if (response.plotly_json?.data?.[0]?.type === 'scattermapbox') {
+      const plotData = response.plotly_json.data[0];
+      if (plotData.lat && plotData.lon) {
+        return plotData.lat.map((lat: number, idx: number) => ({
+          lat,
+          lon: plotData.lon[idx],
+          label: `Point ${idx + 1}`
+        }));
+      }
+    }
+
+    return null;
+  };
 
   const handleSendMessage = async (query: string) => {
     // Add user message
@@ -26,6 +56,9 @@ const Index: React.FC = () => {
     try {
       // Send query to backend
       const response = await sendChatQuery(query);
+
+      // Extract location data
+      const locations = extractLocationsFromResponse(response);
 
       // Add AI response
       const aiMessage: Message = {
@@ -43,6 +76,8 @@ const Index: React.FC = () => {
         setCurrentPlotlyJson(response.plotly_json);
       }
       setCurrentSqlQuery(response.sql_query);
+      setCurrentLocations(locations);
+
     } catch (error) {
       // Show error message
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
@@ -79,7 +114,11 @@ const Index: React.FC = () => {
 
       {/* Right Column - Dashboard (60%) */}
       <div className="w-3/5 p-4">
-        <Dashboard plotlyJson={currentPlotlyJson} sqlQuery={currentSqlQuery} />
+        <Dashboard 
+          plotlyJson={currentPlotlyJson} 
+          sqlQuery={currentSqlQuery ?? ''} 
+          locations={currentLocations ?? []}
+        />
       </div>
     </div>
   );
