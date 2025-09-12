@@ -2,10 +2,11 @@ import os
 import json
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 import chromadb
-from chromadb.utils import embedding_functions # <-- CRITICAL IMPORT
+from chromadb.utils import embedding_functions
 import google.generativeai as genai
 from dotenv import load_dotenv
 
@@ -57,6 +58,15 @@ app = FastAPI(
     description="API for querying ARGO float data using natural language."
 )
 
+# --- ADD CORS MIDDLEWARE ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:3000"], 
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 # --- Pydantic Models for API Validation ---
 class ChatQuery(BaseModel):
     query: str
@@ -67,10 +77,6 @@ class ChatResponse(BaseModel):
     sql_query: str
 
 # --- Core RAG Functions ---
-
-# In your main.py file
-
-# In main.py, replace this function
 
 def generate_sql_from_query(user_query: str) -> str:
     """LLM Call #1: Performs RAG to generate a SQL query."""
@@ -128,49 +134,110 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
     if data.empty or len(data) < 2:
         return None
 
-    # --- FIX: Create a smaller sample of the data for the prompt ---
-    data_sample = data.head(50).to_string()
-
-    prompt = f"""
-    The user asked: "{user_query}".
-    Here is a sample of the first 50 rows of the data:
-    {data_sample}
-
-    Task: Generate a JSON object for a Plotly chart that visualizes the FULL dataset's structure based on this sample.
-    - The JSON should be a dictionary with 'data' and 'layout' keys.
-    - Choose the best chart type (e.g., scatter, line, scatter_mapbox).
-    - If the user asks about location, a 'scatter_mapbox' is best. Use latitude and longitude.
-    - For profiles, a scatter plot of temperature or salinity vs. pressure (depth) is best. Invert the y-axis for pressure.
-    - Make the chart visually appealing with clear titles and labels.
-    - Respond with ONLY the JSON object and nothing else.
-    """
+    # Create the visualization based on the data structure
     try:
-        response = model.generate_content(prompt)
-        json_str = response.text.strip().replace('```json', '').replace('```', '')
-        # IMPORTANT: The LLM will generate the plot code, but your FRONTEND will plot the FULL dataframe.
-        # This code generates the RECIPE, your frontend does the COOKING with all ingredients.
-        plot_recipe = json.loads(json_str)
+        # Check available columns
+        columns = data.columns.tolist()
+        print(f"Available columns: {columns}")
         
-        # Now we replace the sample data in the recipe with ALL the data.
-        # This is a robust way to handle large datasets.
-        if 'data' in plot_recipe and len(plot_recipe['data']) > 0:
-            # Assuming the first trace is the one we want to populate
-            trace = plot_recipe['data'][0]
-            if 'lat' in trace: # Handle mapbox case
-                trace['lat'] = data['latitude'].tolist()
-                trace['lon'] = data['longitude'].tolist()
-            if 'x' in trace and 'y' in trace: # Handle scatter/line case
-                # Infer which columns to use based on the LLM's recipe
-                x_col = data.columns[data.columns.str.contains(trace.get('name', 'x').lower())][0]
-                y_col = data.columns[data.columns.str.contains(trace.get('name', 'y').lower())][0]
-                trace['x'] = data[x_col].tolist()
-                trace['y'] = data[y_col].tolist()
+        # Determine visualization type based on query and columns
+        if any(col in columns for col in ['latitude', 'longitude']) and 'location' in user_query.lower():
+            # Map visualization
+            plot_data = {
+                "data": [{
+                    "type": "scattermapbox",
+                    "lat": data['latitude'].tolist() if 'latitude' in columns else [],
+                    "lon": data['longitude'].tolist() if 'longitude' in columns else [],
+                    "mode": "markers",
+                    "marker": {"size": 8, "color": "blue"},
+                    "name": "Float Locations"
+                }],
+                "layout": {
+                    "title": "Float Locations",
+                    "mapbox": {
+                        "style": "open-street-map",
+                        "center": {"lat": 0, "lon": 0},
+                        "zoom": 1
+                    },
+                    "height": 500
+                }
+            }
+        elif 'measurement_date' in columns and 'daily_average_temperature' in columns:
+            # Time series visualization for temperature
+            plot_data = {
+                "data": [{
+                    "type": "scatter",
+                    "x": data['measurement_date'].tolist(),
+                    "y": data['daily_average_temperature'].tolist(),
+                    "mode": "lines+markers",
+                    "name": "Temperature",
+                    "line": {"color": "rgb(31, 119, 180)"},
+                    "marker": {"size": 6}
+                }],
+                "layout": {
+                    "title": "Daily Average Temperature for 2025",
+                    "xaxis": {"title": "Date"},
+                    "yaxis": {"title": "Temperature (°C)"},
+                    "height": 500,
+                    "showlegend": True
+                }
+            }
+        elif 'pressure' in columns and any(temp_col in columns for temp_col in ['temperature', 'daily_average_temperature']):
+            # Profile visualization (temperature vs pressure)
+            temp_col = 'temperature' if 'temperature' in columns else 'daily_average_temperature'
+            plot_data = {
+                "data": [{
+                    "type": "scatter",
+                    "x": data[temp_col].tolist(),
+                    "y": data['pressure'].tolist(),
+                    "mode": "markers",
+                    "name": "Temperature Profile",
+                    "marker": {"size": 6, "color": "red"}
+                }],
+                "layout": {
+                    "title": "Temperature vs Pressure Profile",
+                    "xaxis": {"title": "Temperature (°C)"},
+                    "yaxis": {"title": "Pressure (dbar)", "autorange": "reversed"},  # Invert y-axis for depth
+                    "height": 500
+                }
+            }
+        else:
+            # Default scatter plot using first two numeric columns
+            numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+            if len(numeric_cols) >= 2:
+                plot_data = {
+                    "data": [{
+                        "type": "scatter",
+                        "x": data[numeric_cols[0]].tolist(),
+                        "y": data[numeric_cols[1]].tolist(),
+                        "mode": "markers",
+                        "name": "Data Points",
+                        "marker": {"size": 6}
+                    }],
+                    "layout": {
+                        "title": f"{numeric_cols[1]} vs {numeric_cols[0]}",
+                        "xaxis": {"title": numeric_cols[0]},
+                        "yaxis": {"title": numeric_cols[1]},
+                        "height": 500
+                    }
+                }
+            else:
+                return None
 
-        return plot_recipe
+        return plot_data
 
     except Exception as e:
         print(f"Error generating visualization: {e}")
         return None
+
+# --- ADD A HEALTH CHECK ENDPOINT ---
+@app.get("/")
+def read_root():
+    return {"message": "FloatChat API is running! 🌊"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 # --- Main API Endpoint ---
 @app.post("/chat", response_model=ChatResponse)

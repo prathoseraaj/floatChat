@@ -13,3 +13,6 @@ INSTALL DBeaver:
 
 DATABASE BACKUP CMD:
             docker exec -t my-argo-db pg_dumpall -c -U postgres > argo_database_backup.sql
+
+
+            uvicorn main:app --reload

@@ -5101,3 +5101,7 @@
   },
   "sql_query": "SELECT salinity, timestamp FROM argo_profiles WHERE EXTRACT(YEAR FROM timestamp) = 2025 AND EXTRACT(MONTH FROM timestamp) = 3"
 }
+
+
+
+give me data of 2025 temprature graph use only one data per day and at one depth level give me graph perfectly
