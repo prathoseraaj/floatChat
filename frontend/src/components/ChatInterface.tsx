@@ -39,8 +39,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, isLoading, onSe
   const quickPrompts = [
     "Show me temperature vs depth for platform 1902670",
     "Salinity data from January 2024 to March 2024", 
-    "Latest 50 pressure measurements with temperature",
-    "Compare salinity between two specific platforms"
+    "Latest 50 pressure measurements with temperature"
   ];
 
   return (
@@ -100,10 +99,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, isLoading, onSe
                 ))}
               </div>
               
-              {/* Helpful guidance */}
-              <div className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-3">
-                <p className="text-center">💡 <strong>Tip:</strong> Be specific with dates, platforms, or limit records for better graphs</p>
-              </div>
             </div>
           )}
           {messages.map((message) => (
