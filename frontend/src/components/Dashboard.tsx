@@ -1,96 +1,99 @@
 import React, { useState } from 'react';
-import { BarChart3, MapPin, Code, Eye, EyeOff } from 'lucide-react';
+import { Code, Eye, EyeOff, Activity, TrendingUp } from 'lucide-react';
 
 // Import your REAL components
 import ChartDisplay from './ChartDisplay';
-import LocationDisplay from './LocationDisplay';
 
 // Import your types
-import { PlotlyJson, LocationData } from '@/types/api';
+import { PlotlyJson } from '@/types/api';
 
 interface DashboardProps {
   plotlyJson: PlotlyJson | null;
   sqlQuery: string | null;
-  locations: LocationData[] | null;
 }
 
-// You can keep this as a sub-component or move it to its own file
+// Enhanced SQL Query Display Component
 const SqlQueryDisplay = ({ sqlQuery, isVisible, onToggle }) => {
   if (!sqlQuery) return null;
 
   return (
-    <div className="bg-card rounded-lg border border-border shadow-lg">
+    <div className="backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 rounded-xl border border-white/30 dark:border-slate-600/30 shadow-lg overflow-hidden">
       <div
-        className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+        className="flex items-center justify-between p-4 cursor-pointer hover:bg-white/50 dark:hover:bg-slate-700/50 transition-all duration-200"
         onClick={onToggle}
       >
-        <div className="flex items-center gap-2">
-          <Code className="text-primary" size={20} />
-          <span className="font-semibold text-foreground">Generated SQL Query</span>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+            <Code className="text-white" size={16} />
+          </div>
+          <span className="font-semibold text-slate-800 dark:text-slate-200">Generated SQL Query</span>
         </div>
-        {isVisible ? <EyeOff size={20} className="text-muted-foreground" /> : <Eye size={20} className="text-muted-foreground" />}
+        <div className="flex items-center gap-2">
+          <div className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-md text-xs font-medium">
+            SQL
+          </div>
+          {isVisible ? <EyeOff size={16} className="text-slate-500" /> : <Eye size={16} className="text-slate-500" />}
+        </div>
       </div>
       {isVisible && (
         <div className="px-4 pb-4">
-          <pre className="bg-muted/50 p-3 rounded-md text-sm overflow-x-auto border">
-            <code className="text-foreground">{sqlQuery}</code>
-          </pre>
+          <div className="bg-slate-900 dark:bg-slate-950 p-4 rounded-lg overflow-x-auto">
+            <pre className="text-sm text-green-400 font-mono">
+              <code>{sqlQuery}</code>
+            </pre>
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-// This is your final Dashboard component
-const Dashboard: React.FC<DashboardProps> = ({ plotlyJson, sqlQuery, locations }) => {
-  const [activeView, setActiveView] = useState<'chart' | 'map'>('chart');
+// Enhanced Dashboard Component
+const Dashboard: React.FC<DashboardProps> = ({ plotlyJson, sqlQuery }) => {
   const [showSqlQuery, setShowSqlQuery] = useState(false);
 
-  // Logic to decide if the map toggle should be shown.
-  // This is true if the `locations` array has data.
-  const shouldShowMapToggle = locations && locations.length > 0;
+  const hasData = plotlyJson;
 
   return (
-    <div className="h-full flex flex-col gap-4 p-4">
-      {/* Header with Title and Toggle Buttons */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-foreground">Data Dashboard</h2>
-        
-        {/* Conditionally render the toggle switch */}
-        {shouldShowMapToggle && (
-          <div className="flex bg-card rounded-lg border border-border shadow-sm overflow-hidden">
-            <button
-              onClick={() => setActiveView('chart')}
-              className={`px-4 py-2 flex items-center gap-2 transition-colors text-sm font-medium ${
-                activeView === 'chart'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              <BarChart3 size={16} />
-              Chart View
-            </button>
-            <button
-              onClick={() => setActiveView('map')}
-              className={`px-4 py-2 flex items-center gap-2 transition-colors text-sm font-medium ${
-                activeView === 'map'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              <MapPin size={16} />
-              Map View
-            </button>
+    <div className="h-full flex flex-col p-6">
+      {/* Modern Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
+            <Activity className="text-white" size={20} />
           </div>
-        )}
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+              Indian Ocean Data Dashboard
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Real-time Indian Ocean analytics and insights
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Main Visualization Area (toggles between chart and map) */}
-      <div className="flex-1 min-h-0">
-        {activeView === 'chart' ? (
-          <ChartDisplay plotlyJson={plotlyJson} />
+      {/* Main Visualization Area - Chart Only */}
+      <div className="flex-1 min-h-0 mb-6">
+        {hasData ? (
+          <div className="h-full backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 rounded-xl border border-white/30 dark:border-slate-600/30 shadow-lg overflow-hidden">
+            <ChartDisplay plotlyJson={plotlyJson} />
+          </div>
         ) : (
-          <LocationDisplay locations={locations} />
+          // Empty State
+          <div className="h-full flex items-center justify-center backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 rounded-xl border border-white/30 dark:border-slate-600/30 shadow-lg">
+            <div className="text-center py-12 px-6">
+              <div className="w-16 h-16 bg-gradient-to-br from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <TrendingUp className="text-white" size={24} />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                No Data Yet
+              </h3>
+              <p className="text-slate-600 dark:text-slate-400 max-w-md">
+                Start a conversation to see beautiful visualizations and insights from your Indian Ocean data queries.
+              </p>
+            </div>
+          </div>
         )}
       </div>
 

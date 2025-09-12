@@ -1,46 +1,17 @@
 import React, { useState } from 'react';
 import ChatInterface from '@/components/ChatInterface';
 import Dashboard from '@/components/Dashboard';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Message, PlotlyJson } from '@/types/api';
 import { sendChatQuery } from '@/api/chatApi';
 import { useToast } from '@/hooks/use-toast';
-
-
-// Define LocationData interface
-interface LocationData {
-  lat: number;
-  lon: number;
-  label?: string;
-}
 
 const Index: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPlotlyJson, setCurrentPlotlyJson] = useState<PlotlyJson | null>(null);
   const [currentSqlQuery, setCurrentSqlQuery] = useState<string | null>(null);
-  const [currentLocations, setCurrentLocations] = useState<LocationData[] | null>(null);
   const { toast } = useToast();
-
-  const extractLocationsFromResponse = (response: any): LocationData[] | null => {
-    // First, check if locations were explicitly provided in the response
-    if (response.locations && response.locations.length > 0) {
-      return response.locations;
-    }
-
-    // Then, check if it's a mapbox plot with lat/lon data
-    if (response.plotly_json?.data?.[0]?.type === 'scattermapbox') {
-      const plotData = response.plotly_json.data[0];
-      if (plotData.lat && plotData.lon) {
-        return plotData.lat.map((lat: number, idx: number) => ({
-          lat,
-          lon: plotData.lon[idx],
-          label: `Point ${idx + 1}`
-        }));
-      }
-    }
-
-    return null;
-  };
 
   const handleSendMessage = async (query: string) => {
     // Add user message
@@ -57,9 +28,6 @@ const Index: React.FC = () => {
       // Send query to backend
       const response = await sendChatQuery(query);
 
-      // Extract location data
-      const locations = extractLocationsFromResponse(response);
-
       // Add AI response
       const aiMessage: Message = {
         id: `ai-${Date.now()}`,
@@ -71,12 +39,11 @@ const Index: React.FC = () => {
       };
       setMessages((prev) => [...prev, aiMessage]);
 
-      // Update dashboard
+      // Update dashboard with chart data only
       if (response.plotly_json) {
         setCurrentPlotlyJson(response.plotly_json);
       }
       setCurrentSqlQuery(response.sql_query);
-      setCurrentLocations(locations);
 
     } catch (error) {
       // Show error message
@@ -102,23 +69,37 @@ const Index: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-wave">
-      {/* Left Column - Chat Interface (40%) */}
-      <div className="w-2/5 p-4">
-        <ChatInterface
-          messages={messages}
-          isLoading={isLoading}
-          onSendMessage={handleSendMessage}
-        />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 dark:from-slate-900 dark:via-blue-950 dark:to-cyan-950">
+      {/* Background pattern overlay */}
+      <div className="absolute inset-0 bg-grid-slate-100 dark:bg-grid-slate-800/25 bg-[size:64px_64px] opacity-30" />
+      
+      {/* Theme Toggle - Fixed position */}
+      <div className="fixed top-6 right-6 z-50">
+        <ThemeToggle />
       </div>
+      
+      {/* Main container with glassmorphism */}
+      <div className="relative flex h-screen backdrop-blur-sm">
+        {/* Left Column - Chat Interface (40%) */}
+        <div className="w-2/5 p-6 flex flex-col">
+          <div className="h-full backdrop-blur-md bg-white/70 dark:bg-slate-900/70 rounded-2xl border border-white/20 dark:border-slate-700/50 shadow-2xl shadow-blue-500/10">
+            <ChatInterface
+              messages={messages}
+              isLoading={isLoading}
+              onSendMessage={handleSendMessage}
+            />
+          </div>
+        </div>
 
-      {/* Right Column - Dashboard (60%) */}
-      <div className="w-3/5 p-4">
-        <Dashboard 
-          plotlyJson={currentPlotlyJson} 
-          sqlQuery={currentSqlQuery ?? ''} 
-          locations={currentLocations ?? []}
-        />
+        {/* Right Column - Dashboard (60%) */}
+        <div className="w-3/5 p-6 flex flex-col">
+          <div className="h-full backdrop-blur-md bg-white/70 dark:bg-slate-900/70 rounded-2xl border border-white/20 dark:border-slate-700/50 shadow-2xl shadow-blue-500/10">
+            <Dashboard 
+              plotlyJson={currentPlotlyJson} 
+              sqlQuery={currentSqlQuery ?? ''} 
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

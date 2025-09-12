@@ -8,18 +8,18 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Ocean-inspired background colors */
-    --background: 200 50% 98%;
-    --foreground: 200 95% 8%;
+    /* Modern ocean-inspired background colors */
+    --background: 210 40% 99%;
+    --foreground: 210 95% 7%;
 
-    /* Deep ocean blue cards */
-    --card: 200 40% 99%;
-    --card-foreground: 200 95% 8%;
+    /* Glassmorphism cards */
+    --card: 210 40% 99%;
+    --card-foreground: 210 95% 7%;
 
-    --popover: 200 40% 99%;
-    --popover-foreground: 200 95% 8%;
+    --popover: 210 40% 99%;
+    --popover-foreground: 210 95% 7%;
 
-    /* Ocean wave primary */
+    /* Ocean wave primary with better contrast */
     --primary: 195 82% 46%;
     --primary-foreground: 0 0% 100%;
     --primary-hover: 195 82% 38%;
@@ -27,12 +27,12 @@ All colors MUST be HSL.
 
     /* Seafoam secondary */
     --secondary: 174 42% 85%;
-    --secondary-foreground: 200 95% 12%;
+    --secondary-foreground: 210 95% 12%;
     --secondary-hover: 174 42% 78%;
 
     /* Sandy muted tones */
-    --muted: 45 20% 93%;
-    --muted-foreground: 200 60% 25%;
+    --muted: 210 30% 94%;
+    --muted-foreground: 210 60% 25%;
 
     /* Teal accent */
     --accent: 180 60% 92%;
@@ -43,34 +43,36 @@ All colors MUST be HSL.
     --destructive-foreground: 210 40% 98%;
 
     /* Subtle ocean borders */
-    --border: 200 30% 88%;
-    --input: 200 30% 92%;
+    --border: 210 30% 88%;
+    --input: 210 30% 94%;
     --ring: 195 82% 46%;
 
     --radius: 0.75rem;
 
-    /* Ocean gradients */
-    --gradient-ocean: linear-gradient(135deg, hsl(195 82% 46%), hsl(180 60% 50%));
-    --gradient-wave: linear-gradient(180deg, hsl(200 50% 98%), hsl(195 40% 94%));
+    /* Enhanced gradients */
+    --gradient-ocean: linear-gradient(135deg, hsl(195 82% 46%), hsl(180 60% 50%), hsl(174 42% 65%));
+    --gradient-wave: linear-gradient(180deg, hsl(210 40% 99%), hsl(195 40% 94%));
     --gradient-depth: linear-gradient(180deg, hsl(195 82% 46%), hsl(200 95% 20%));
-    --gradient-sunset: linear-gradient(135deg, hsl(195 82% 46%), hsl(174 42% 65%));
+    --gradient-sunset: linear-gradient(135deg, hsl(195 82% 46%), hsl(174 42% 65%), hsl(45 100% 70%));
 
-    /* Shadows with ocean tint */
+    /* Modern shadows with better depth */
     --shadow-sm: 0 2px 8px hsl(195 82% 46% / 0.08);
     --shadow-md: 0 8px 24px hsl(195 82% 46% / 0.12);
     --shadow-lg: 0 16px 48px hsl(195 82% 46% / 0.16);
-    --shadow-glow: 0 0 24px hsl(195 82% 56% / 0.3);
+    --shadow-xl: 0 24px 64px hsl(195 82% 46% / 0.20);
+    --shadow-glow: 0 0 32px hsl(195 82% 56% / 0.4);
 
-    /* Transitions */
+    /* Smooth transitions */
     --transition-base: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-smooth: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
-    /* Chat specific */
-    --chat-bg: hsl(200 40% 99%);
+    /* Chat specific with glassmorphism */
+    --chat-bg: hsla(210, 40%, 99%, 0.8);
     --chat-user: hsl(195 82% 46%);
     --chat-ai: hsl(174 42% 85%);
-    --dashboard-bg: hsl(200 30% 97%);
-    --code-bg: hsl(200 95% 8%);
+    --dashboard-bg: hsla(210, 30%, 97%, 0.8);
+    --code-bg: hsl(210 95% 8%);
     --code-text: hsl(180 60% 70%);
 
     --sidebar-background: 0 0% 98%;
@@ -84,18 +86,18 @@ All colors MUST be HSL.
   }
 
   .dark {
-    /* Deep ocean dark mode */
-    --background: 200 95% 6%;
-    --foreground: 200 20% 96%;
+    /* Deep ocean dark mode with better contrast */
+    --background: 210 95% 4%;
+    --foreground: 210 20% 96%;
 
-    --card: 200 80% 8%;
-    --card-foreground: 200 20% 96%;
+    --card: 210 80% 6%;
+    --card-foreground: 210 20% 96%;
 
-    --popover: 200 80% 8%;
-    --popover-foreground: 200 20% 96%;
+    --popover: 210 80% 6%;
+    --popover-foreground: 210 20% 96%;
 
     --primary: 195 82% 56%;
-    --primary-foreground: 200 95% 6%;
+    --primary-foreground: 210 95% 4%;
     --primary-hover: 195 82% 62%;
     --primary-glow: 195 82% 66%;
 
@@ -103,8 +105,8 @@ All colors MUST be HSL.
     --secondary-foreground: 180 20% 96%;
     --secondary-hover: 180 50% 25%;
 
-    --muted: 200 60% 12%;
-    --muted-foreground: 200 20% 70%;
+    --muted: 210 60% 10%;
+    --muted-foreground: 210 20% 70%;
 
     --accent: 180 60% 15%;
     --accent-foreground: 180 20% 96%;
@@ -113,25 +115,26 @@ All colors MUST be HSL.
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 200 60% 15%;
-    --input: 200 60% 12%;
+    --border: 210 60% 15%;
+    --input: 210 60% 10%;
     --ring: 195 82% 56%;
 
-    --gradient-ocean: linear-gradient(135deg, hsl(195 82% 56%), hsl(180 60% 40%));
-    --gradient-wave: linear-gradient(180deg, hsl(200 95% 6%), hsl(200 80% 10%));
-    --gradient-depth: linear-gradient(180deg, hsl(195 82% 56%), hsl(200 95% 15%));
-    --gradient-sunset: linear-gradient(135deg, hsl(195 82% 56%), hsl(174 42% 45%));
+    --gradient-ocean: linear-gradient(135deg, hsl(195 82% 56%), hsl(180 60% 40%), hsl(174 42% 55%));
+    --gradient-wave: linear-gradient(180deg, hsl(210 95% 4%), hsl(210 80% 8%));
+    --gradient-depth: linear-gradient(180deg, hsl(195 82% 56%), hsl(210 95% 15%));
+    --gradient-sunset: linear-gradient(135deg, hsl(195 82% 56%), hsl(174 42% 45%), hsl(45 80% 60%));
 
-    --shadow-sm: 0 2px 8px hsl(0 0% 0% / 0.2);
-    --shadow-md: 0 8px 24px hsl(0 0% 0% / 0.3);
-    --shadow-lg: 0 16px 48px hsl(0 0% 0% / 0.4);
-    --shadow-glow: 0 0 24px hsl(195 82% 66% / 0.2);
+    --shadow-sm: 0 2px 8px hsl(0 0% 0% / 0.4);
+    --shadow-md: 0 8px 24px hsl(0 0% 0% / 0.5);
+    --shadow-lg: 0 16px 48px hsl(0 0% 0% / 0.6);
+    --shadow-xl: 0 24px 64px hsl(0 0% 0% / 0.7);
+    --shadow-glow: 0 0 32px hsl(195 82% 66% / 0.3);
 
-    --chat-bg: hsl(200 80% 8%);
+    --chat-bg: hsla(210, 80%, 6%, 0.8);
     --chat-user: hsl(195 82% 56%);
     --chat-ai: hsl(180 50% 20%);
-    --dashboard-bg: hsl(200 90% 7%);
-    --code-bg: hsl(200 95% 4%);
+    --dashboard-bg: hsla(210, 90%, 5%, 0.8);
+    --code-bg: hsl(210 95% 2%);
     --code-text: hsl(180 60% 60%);
 
     --sidebar-background: 240 5.9% 10%;
@@ -151,6 +154,38 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Grid pattern for background */
+  .bg-grid-slate-100 {
+    background-image: linear-gradient(to right, rgb(241 245 249) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgb(241 245 249) 1px, transparent 1px);
+  }
+
+  .dark .bg-grid-slate-800\/25 {
+    background-image: linear-gradient(to right, rgba(30, 41, 59, 0.25) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(30, 41, 59, 0.25) 1px, transparent 1px);
+  }
+}
+
+@layer components {
+  /* Glassmorphism utilities */
+  .glass {
+    @apply backdrop-blur-md bg-white/70 dark:bg-slate-900/70 border border-white/20 dark:border-slate-700/50;
+  }
+
+  .glass-card {
+    @apply glass rounded-xl shadow-xl shadow-blue-500/10 dark:shadow-blue-400/5;
+  }
+
+  /* Enhanced message bubbles */
+  .message-bubble {
+    @apply backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 border border-white/30 dark:border-slate-600/30;
+  }
+
+  /* Loading states */
+  .loading-shimmer {
+    @apply animate-pulse bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700;
   }
 }
