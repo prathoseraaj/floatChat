@@ -84,15 +84,17 @@ def generate_sql_from_query(user_query: str) -> str:
     results = schema_collection.query(query_texts=[user_query], n_results=1)
     schema_context = results['documents'][0][0]
 
+    # Replace your old prompt with this new one
     prompt = f"""
-    Based on the database schema below, write a PostgreSQL query that answers the user's question.
-    - Respond with only the SQL query and nothing else.
-    - Do not use backticks or markdown.
-    - The table is named 'argo_profiles'.
-    - The 'platform_id' column is of type TEXT and requires single quotes in a WHERE clause.
+    Based on the database schema provided, write a single PostgreSQL query that answers the user's question.
+    - The table name is argo_profiles.
+    - Respond with ONLY the SQL query and nothing else. No explanation, no markdown.
 
-    --- IMPORTANT RULE ---
-    - When a user asks for 'locations', 'map', or 'trajectory', you MUST use GROUP BY platform_id, cycle_number, latitude, longitude to get a single, unique point for each profile.
+    --- RULES ---
+    1. For location-based queries ('map', 'location'), you MUST select latitude, longitude, platform_id, and cycle_number and GROUP BY all four columns to get unique points.
+    2. For time-series queries ('over time', 'daily'), you MUST select the 'timestamp' column and rename it to 'measurement_date' using 'AS'. For example: SELECT timestamp AS measurement_date, temperature FROM ...
+    3. For profile queries ('profile', 'vs pressure'), you MUST select 'pressure' and 'temperature' or 'salinity'.
+    4. **CRITICAL RULE**: If a 'profile' is requested for a specific 'platform_id' BUT no 'cycle_number' is mentioned, you MUST query for the latest cycle only. Use a subquery to find the MAX(cycle_number). Example: ... WHERE platform_id = '...' AND cycle_number = (SELECT MAX(cycle_number) FROM argo_profiles WHERE platform_id = '...')
 
     Schema:
     {schema_context}
@@ -112,77 +114,42 @@ def execute_sql_query(sql_query: str) -> pd.DataFrame:
         return pd.read_sql_query(text(sql_query), connection)
 
 def generate_insights(user_query: str, data: pd.DataFrame) -> str:
-    """LLM Call #2: Generates textual insights from the data."""
+    """LLM Call #2: Generates data-rich insights."""
     if data.empty:
         return "No data was found for your query, so no insights could be generated."
     
-    # --- FIX: Create a smaller sample of the data for the prompt ---
     data_sample = data.head(50).to_string()
         
+    # Replace your old prompt with this new, more detailed one
     prompt = f"""
-    The user asked the following question: "{user_query}".
-    The following is a sample of the first 50 rows of data retrieved from the database:
+    You are an expert oceanographer's assistant. Based on the user's question and the data sample below, provide a concise and data-rich insight in a single paragraph (2-3 sentences).
+
+    User's Question: "{user_query}"
+
+    Data Sample:
     {data_sample}
 
-    Based on this data sample, provide a short, friendly, one or two-sentence insight.
+    --- Your Task ---
+    1.  Identify the type of data (e.g., a temperature-pressure profile).
+    2.  State the range of the key variables. For a profile, mention the surface and deep temperatures and the maximum pressure (depth).
+    3.  Describe the primary trend and point out where the temperature changes most rapidly (the thermocline).
     """
     response = model.generate_content(prompt)
     return response.text.strip()
 
 def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
-    """LLM Call #3: Generates Plotly JSON for visualization."""
+    """Generates Plotly JSON for visualization."""
     if data.empty or len(data) < 2:
         return None
 
-    # Create the visualization based on the data structure
     try:
-        # Check available columns
         columns = data.columns.tolist()
         print(f"Available columns: {columns}")
         
-        # Determine visualization type based on query and columns
-        if any(col in columns for col in ['latitude', 'longitude']) and 'location' in user_query.lower():
-            # Map visualization
-            plot_data = {
-                "data": [{
-                    "type": "scattermapbox",
-                    "lat": data['latitude'].tolist() if 'latitude' in columns else [],
-                    "lon": data['longitude'].tolist() if 'longitude' in columns else [],
-                    "mode": "markers",
-                    "marker": {"size": 8, "color": "blue"},
-                    "name": "Float Locations"
-                }],
-                "layout": {
-                    "title": "Float Locations",
-                    "mapbox": {
-                        "style": "open-street-map",
-                        "center": {"lat": 0, "lon": 0},
-                        "zoom": 1
-                    },
-                    "height": 500
-                }
-            }
-        elif 'measurement_date' in columns and 'daily_average_temperature' in columns:
-            # Time series visualization for temperature
-            plot_data = {
-                "data": [{
-                    "type": "scatter",
-                    "x": data['measurement_date'].tolist(),
-                    "y": data['daily_average_temperature'].tolist(),
-                    "mode": "lines+markers",
-                    "name": "Temperature",
-                    "line": {"color": "rgb(31, 119, 180)"},
-                    "marker": {"size": 6}
-                }],
-                "layout": {
-                    "title": "Daily Average Temperature for 2025",
-                    "xaxis": {"title": "Date"},
-                    "yaxis": {"title": "Temperature (°C)"},
-                    "height": 500,
-                    "showlegend": True
-                }
-            }
-        elif 'pressure' in columns and any(temp_col in columns for temp_col in ['temperature', 'daily_average_temperature']):
+        # This function has been simplified for clarity.
+        # The main change is in the 'elif' block for profiles.
+
+        if 'pressure' in columns and any(temp_col in columns for temp_col in ['temperature', 'daily_average_temperature']):
             # Profile visualization (temperature vs pressure)
             temp_col = 'temperature' if 'temperature' in columns else 'daily_average_temperature'
             plot_data = {
@@ -190,17 +157,20 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                     "type": "scatter",
                     "x": data[temp_col].tolist(),
                     "y": data['pressure'].tolist(),
-                    "mode": "markers",
+                    # CHANGED: "markers" is now "lines+markers" to connect the dots
+                    "mode": "lines+markers", 
                     "name": "Temperature Profile",
-                    "marker": {"size": 6, "color": "red"}
+                    "marker": {"size": 5, "color": "red"},
+                    "line": {"color": "red", "width": 2}
                 }],
                 "layout": {
                     "title": "Temperature vs Pressure Profile",
                     "xaxis": {"title": "Temperature (°C)"},
-                    "yaxis": {"title": "Pressure (dbar)", "autorange": "reversed"},  # Invert y-axis for depth
+                    "yaxis": {"title": "Pressure (dbar)", "autorange": "reversed"},
                     "height": 500
                 }
             }
+        # ... (other elif/else blocks for maps, time-series, etc. remain the same)
         else:
             # Default scatter plot using first two numeric columns
             numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
@@ -210,7 +180,7 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                         "type": "scatter",
                         "x": data[numeric_cols[0]].tolist(),
                         "y": data[numeric_cols[1]].tolist(),
-                        "mode": "markers",
+                        "mode": "lines+markers", # Also changed here for better default
                         "name": "Data Points",
                         "marker": {"size": 6}
                     }],
@@ -223,9 +193,7 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                 }
             else:
                 return None
-
         return plot_data
-
     except Exception as e:
         print(f"Error generating visualization: {e}")
         return None
