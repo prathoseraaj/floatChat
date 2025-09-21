@@ -47,10 +47,10 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({ plotlyJson }) => {
       ...plotlyJson.layout?.font,
     },
     margin: {
-      t: 40,
-      r: 20,
-      b: 40,
-      l: 50,
+      t: 50,
+      r: 30,
+      b: 80,
+      l: 80,
       ...plotlyJson.layout?.margin,
     },
     hoverlabel: {
@@ -72,11 +72,15 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({ plotlyJson }) => {
     xaxis: {
       gridcolor: 'rgba(203, 213, 225, 0.3)',
       zerolinecolor: 'rgba(203, 213, 225, 0.5)',
+      titlefont: { size: 14, color: 'rgb(71, 85, 105)' },
+      tickfont: { size: 12, color: 'rgb(71, 85, 105)' },
       ...plotlyJson.layout?.xaxis,
     },
     yaxis: {
       gridcolor: 'rgba(203, 213, 225, 0.3)',
       zerolinecolor: 'rgba(203, 213, 225, 0.5)',
+      titlefont: { size: 14, color: 'rgb(71, 85, 105)' },
+      tickfont: { size: 12, color: 'rgb(71, 85, 105)' },
       ...plotlyJson.layout?.yaxis,
     },
   };

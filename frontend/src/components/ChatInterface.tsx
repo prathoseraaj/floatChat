@@ -37,8 +37,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, isLoading, onSe
   };
 
   const quickPrompts = [
-    "Show me temperature vs depth for platform 1902670",
-    "Salinity data from January 2024 to March 2024", 
+    "What are the nearest ARGO floats to this arabian sea?", 
     "Latest 50 pressure measurements with temperature"
   ];
 

@@ -18,3 +18,5 @@ DATABASE BACKUP CMD:
             uvicorn main:app --reload
 
             Salinity data from January 2024 to March 2024 take one data per day
+
+            give me overall pressure data in 1902670 as take  same depth level and  one data per week.

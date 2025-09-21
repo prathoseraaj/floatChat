@@ -10,10 +10,8 @@ from chromadb.utils import embedding_functions
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-# --- Configuration & Initializations ---
 load_dotenv()
 
-# Configure the Gemini API key
 try:
     api_key = os.getenv("gemini_api_key")
     if not api_key:
@@ -23,7 +21,6 @@ except (ValueError, AttributeError) as e:
     print(f"⚠️  Error configuring Gemini API: {e}")
     exit()
 
-# Connect to the PostgreSQL database
 try:
     DB_URL = "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
     engine = create_engine(DB_URL)
@@ -31,14 +28,10 @@ except Exception as e:
     print(f"⚠️  Error connecting to PostgreSQL: {e}")
     exit()
 
-# --- THIS IS THE FIX ---
-# We must explicitly define the Google embedding function to ensure consistency.
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-# Use HuggingFace Sentence Transformer (runs locally, no API calls)
 hf_ef = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
 
-# Connect to ChromaDB, ensuring we use the HuggingFace embedding function
 try:
     chroma_client = chromadb.PersistentClient(path="./chroma_db")
     schema_collection = chroma_client.get_collection(
@@ -49,26 +42,21 @@ except Exception as e:
     print(f"⚠️  Error initializing ChromaDB: {e}")
     exit()
 
-# Initialize the generative model
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# --- FastAPI App ---
 app = FastAPI(
     title="FloatChat API",
     description="API for querying ARGO float data using natural language."
 )
 
-# --- ADD CORS MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
-    # 👇 ADD YOUR FRONTEND'S ADDRESS TO THIS LIST
     allow_origins=["http://localhost:8081", "http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:8080"], 
     allow_credentials=True,
     allow_methods=["*"], # You can be more specific, e.g., ["GET", "POST"]
     allow_headers=["*"],
 )
 
-# --- Pydantic Models for API Validation ---
 class ChatQuery(BaseModel):
     query: str
 
@@ -92,16 +80,35 @@ def generate_sql_from_query(user_query: str) -> str:
     - The table is named 'argo_profiles'.
     - The 'platform_id' column is of type TEXT and requires single quotes in a WHERE clause.
 
+    --- GEOGRAPHIC KNOWLEDGE FOR INDIAN OCEAN ---
+    - Arabian Sea: latitude 10°N to 25°N, longitude 50°E to 80°E (lat BETWEEN 10 AND 25 AND lon BETWEEN 50 AND 80)
+    - Bay of Bengal: latitude 5°N to 25°N, longitude 80°E to 100°E (lat BETWEEN 5 AND 25 AND lon BETWEEN 80 AND 100)
+    - Equator region: latitude -5°N to 5°N (lat BETWEEN -5 AND 5)
+    - Indian Ocean Central: latitude -40°S to 25°N, longitude 20°E to 120°E
+    - Near/around terms: use ±2-5 degree range around specific coordinates
+    - "Nearest" or "closest": use latitude and longitude to find proximity
+
     --- IMPORTANT RULES ---
     - When a user asks for 'locations', 'map', or 'trajectory', you MUST use GROUP BY platform_id, cycle_number, latitude, longitude to get a single, unique point for each profile.
+    - For geographic queries without date filters, always add LIMIT 2000 to prevent overwhelming results
+    - Use latitude/longitude column names exactly as they appear in the schema (likely 'latitude', 'longitude' or 'lat', 'lon')
+    - When using GROUP BY, you can only ORDER BY columns that are in the GROUP BY clause or use aggregate functions
     
     --- DATA SAMPLING RULES ---
-    - If the user does NOT specify a date range, time period, or specific year/month, and asks for visualizations (graphs, plots, charts):
-      * Use TABLESAMPLE SYSTEM (5) or LIMIT 1000 to sample data for better visualization
-      * Or use WHERE MOD(EXTRACT(DOY FROM timestamp), 30) = 0 to get one sample per month
-      * This prevents overwhelming visualizations with 40,000+ data points
+    - If the user does NOT specify a date range, time period, or specific year/month:
+      * For visualizations: Use LIMIT 2000 to sample data for better performance
+      * For geographic queries: Use LIMIT 2000 to get good spatial coverage
+      * For profiles/depth data: Use LIMIT 1000 to prevent browser lag
     - If the user specifies dates, years, or time ranges, return all data in that range
     - For summary statistics (count, avg, min, max), don't limit the data
+    - For queries with GROUP BY: ORDER BY columns that are in the GROUP BY clause only (e.g., ORDER BY platform_id, latitude)
+    - For queries without GROUP BY: You can ORDER BY timestamp DESC or any column
+
+    --- EXAMPLE GEOGRAPHIC QUERIES ---
+    - "Arabian Sea": WHERE latitude BETWEEN 10 AND 25 AND longitude BETWEEN 50 AND 80 LIMIT 2000
+    - "near equator": WHERE latitude BETWEEN -5 AND 5 LIMIT 2000  
+    - "salinity profiles near equator": WHERE latitude BETWEEN -5 AND 5 AND salinity IS NOT NULL LIMIT 1000
+    - "nearest ARGO floats to Arabian Sea": SELECT platform_id, cycle_number, latitude, longitude FROM argo_profiles WHERE latitude BETWEEN 10 AND 25 AND longitude BETWEEN 50 AND 80 GROUP BY platform_id, cycle_number, latitude, longitude ORDER BY platform_id LIMIT 2000
 
     Schema:
     {schema_context}
@@ -124,11 +131,11 @@ def sample_large_dataset(data: pd.DataFrame, user_query: str) -> pd.DataFrame:
     """Sample large datasets for better visualization when no date filter is specified."""
     
     # If dataset is small enough, return as is
-    if len(data) <= 1000:
+    if len(data) <= 1500:
         return data
     
     # Check if user specified date/time constraints
-    time_keywords = ['year', 'month', 'date', 'time', 'recent', 'latest', 'last', 'since', 'before', 'after', 'between']
+    time_keywords = ['year', 'month', 'date', 'time', 'recent', 'latest', 'last', 'since', 'before', 'after', 'between', '2020', '2021', '2022', '2023', '2024']
     has_time_filter = any(keyword in user_query.lower() for keyword in time_keywords)
     
     # If user specified time constraints, don't sample
@@ -137,17 +144,38 @@ def sample_large_dataset(data: pd.DataFrame, user_query: str) -> pd.DataFrame:
     
     print(f"Large dataset detected ({len(data)} rows). Sampling for better visualization...")
     
-    # Sample strategy 1: If timestamp column exists, take every Nth row based on time
-    if 'timestamp' in data.columns:
+    # Strategy 1: For geographic data, ensure good spatial distribution
+    if 'latitude' in data.columns and 'longitude' in data.columns:
+        # Sort by latitude and longitude to get good geographic spread
+        data_sorted = data.sort_values(['latitude', 'longitude'])
+        step = max(1, len(data) // 1200)  # Sample to get ~1200 points for good geographic coverage
+        sampled_data = data_sorted.iloc[::step]
+        print(f"Geographic sampling: {len(sampled_data)} rows selected with spatial distribution")
+        return sampled_data
+    
+    # Strategy 2: Time-based sampling if timestamp exists
+    elif 'timestamp' in data.columns:
         # Sort by timestamp and take every Nth row to get even distribution
         data_sorted = data.sort_values('timestamp')
-        step = max(1, len(data) // 1000)  # Sample to get ~1000 points
+        step = max(1, len(data) // 1200)  # Sample to get ~1200 points
         sampled_data = data_sorted.iloc[::step]
         print(f"Time-based sampling: {len(sampled_data)} rows selected")
         return sampled_data
     
-    # Sample strategy 2: Random sampling if no timestamp
-    sample_size = min(1000, len(data))
+    # Strategy 3: For profile data (temperature, salinity vs pressure)
+    elif 'pressure' in data.columns and any(col in data.columns for col in ['temperature', 'salinity', 'daily_average_temperature']):
+        # For oceanographic profiles, sample across pressure ranges
+        if len(data) > 2000:
+            # Take every Nth row to maintain profile structure
+            step = max(1, len(data) // 1200)
+            sampled_data = data.iloc[::step]
+            print(f"Profile sampling: {len(sampled_data)} rows selected")
+            return sampled_data
+        else:
+            return data
+    
+    # Strategy 4: Random sampling if no specific structure detected
+    sample_size = min(1200, len(data))
     sampled_data = data.sample(n=sample_size, random_state=42)
     print(f"Random sampling: {len(sampled_data)} rows selected")
     return sampled_data
@@ -155,17 +183,69 @@ def sample_large_dataset(data: pd.DataFrame, user_query: str) -> pd.DataFrame:
 def generate_insights(user_query: str, data: pd.DataFrame) -> str:
     """LLM Call #2: Generates textual insights from the data."""
     if data.empty:
-        return "No data was found for your query, so no insights could be generated."
+        return "No data was found for your query. This could be because the geographic region you specified doesn't have ARGO float data, or the search parameters were too restrictive. Try expanding your search area or checking if the region has ARGO float coverage."
     
-    # --- FIX: Create a smaller sample of the data for the prompt ---
-    data_sample = data.head(50).to_string()
+    # Create a comprehensive data summary for better insights
+    data_summary = {
+        "total_records": len(data),
+        "columns": data.columns.tolist(),
+        "date_range": None,
+        "geographic_range": None,
+        "key_stats": {}
+    }
+    
+    # Get date range if timestamp exists
+    timestamp_cols = [col for col in data.columns if 'date' in col.lower() or 'time' in col.lower()]
+    if timestamp_cols:
+        try:
+            date_col = timestamp_cols[0]
+            data_summary["date_range"] = f"From {data[date_col].min()} to {data[date_col].max()}"
+        except:
+            pass
+    
+    # Get geographic range if lat/lon exists
+    if 'latitude' in data.columns and 'longitude' in data.columns:
+        data_summary["geographic_range"] = f"Latitude: {data['latitude'].min():.2f}° to {data['latitude'].max():.2f}°, Longitude: {data['longitude'].min():.2f}° to {data['longitude'].max():.2f}°"
+    elif 'lat' in data.columns and 'lon' in data.columns:
+        data_summary["geographic_range"] = f"Latitude: {data['lat'].min():.2f}° to {data['lat'].max():.2f}°, Longitude: {data['lon'].min():.2f}° to {data['lon'].max():.2f}°"
+    
+    # Get key statistics for numeric columns
+    numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+    for col in numeric_cols[:3]:  # Top 3 numeric columns
+        if not data[col].isna().all():
+            data_summary["key_stats"][col] = {
+                "min": float(data[col].min()),
+                "max": float(data[col].max()),
+                "mean": float(data[col].mean())
+            }
+    
+    # Create a sample of the actual data
+    data_sample = data.head(20).to_string(max_rows=20, max_cols=10, float_format='%.2f')
         
     prompt = f"""
-    The user asked the following question: "{user_query}".
-    The following is a sample of the first 50 rows of data retrieved from the database:
+    The user asked: "{user_query}"
+    
+    ARGO Float Data Summary:
+    - Total records found: {data_summary['total_records']}
+    - Available columns: {', '.join(data_summary['columns'][:10])}
+    {f"- Date range: {data_summary['date_range']}" if data_summary['date_range'] else ""}
+    {f"- Geographic coverage: {data_summary['geographic_range']}" if data_summary['geographic_range'] else ""}
+    
+    Key Statistics:
+    {json.dumps(data_summary['key_stats'], indent=2) if data_summary['key_stats'] else "No numeric data available"}
+    
+    Sample Data (first 20 rows):
     {data_sample}
 
-    Based on this data sample, provide a short, friendly, one or two-sentence insight.
+    CONTEXT: This is oceanographic data from ARGO floats in the Indian Ocean region. ARGO floats are autonomous instruments that measure temperature, salinity, and pressure profiles in the ocean.
+
+    Based on this ARGO float data, provide a friendly and informative insight in 4-6 sentences. Include:
+    1. What the data shows about the ocean conditions
+    2. Any interesting patterns or values you notice
+    3. The geographic or temporal scope of the data
+    4. Relevant oceanographic context for the Indian Ocean region
+
+    Make it conversational and educational, as if explaining to someone interested in ocean science.
     """
     response = model.generate_content(prompt)
     return response.text.strip()
@@ -207,9 +287,24 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                         "marker": {"size": marker_size, "color": "rgb(31, 119, 180)"}
                     }],
                     "layout": {
-                        "title": f"{numeric_cols[0]} over {datetime_col} (Sampled: {data_size} points)",
-                        "xaxis": {"title": datetime_col},
-                        "yaxis": {"title": numeric_cols[0]},
+                        "title": {
+                            "text": f"{numeric_cols[0]} over {datetime_col} (Sampled: {data_size} points)",
+                            "font": {"size": 16}
+                        },
+                        "xaxis": {
+                            "title": {
+                                "text": datetime_col.replace('_', ' ').title()[:30] + ("..." if len(datetime_col) > 30 else ""),
+                                "font": {"size": 13},
+                                "standoff": 20
+                            }
+                        },
+                        "yaxis": {
+                            "title": {
+                                "text": numeric_cols[0].replace('_', ' ').title()[:30] + ("..." if len(numeric_cols[0]) > 30 else ""),
+                                "font": {"size": 13},
+                                "standoff": 20
+                            }
+                        },
                         "height": 500,
                         "showlegend": True
                     }
@@ -229,13 +324,29 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                     "y": data["pressure"].tolist(),
                     "mode": "lines+markers",
                     "name": "Temperature Profile",
-                    "line": {"color": "red"},
-                    "marker": {"size": 6}
+                    "line": {"color": "red", "width": 2},
+                    "marker": {"size": 4}
                 }],
                 "layout": {
-                    "title": "Temperature vs Pressure Profile",
-                    "xaxis": {"title": "Temperature (°C)"},
-                    "yaxis": {"title": "Pressure (dbar)", "autorange": "reversed"},
+                    "title": {
+                        "text": "Temperature vs Pressure Profile",
+                        "font": {"size": 16}
+                    },
+                    "xaxis": {
+                        "title": {
+                            "text": "Temperature (°C)",
+                            "font": {"size": 13},
+                            "standoff": 20
+                        }
+                    },
+                    "yaxis": {
+                        "title": {
+                            "text": "Pressure (dbar)",
+                            "font": {"size": 13},
+                            "standoff": 20
+                        },
+                        "autorange": "reversed"
+                    },
                     "height": 500
                 }
             }
@@ -252,12 +363,29 @@ def generate_visualization(user_query: str, data: pd.DataFrame) -> dict | None:
                         "x": data[numeric_cols[0]].tolist(),
                         "y": data[numeric_cols[1]].tolist(),
                         "mode": "lines+markers",
-                        "name": "Data Relationship"
+                        "name": "Data Relationship",
+                        "line": {"color": "rgb(31, 119, 180)", "width": 2},
+                        "marker": {"size": 4}
                     }],
                     "layout": {
-                        "title": f"{numeric_cols[1]} vs {numeric_cols[0]}",
-                        "xaxis": {"title": numeric_cols[0]},
-                        "yaxis": {"title": numeric_cols[1]},
+                        "title": {
+                            "text": f"{numeric_cols[1]} vs {numeric_cols[0]}",
+                            "font": {"size": 16}
+                        },
+                        "xaxis": {
+                            "title": {
+                                "text": numeric_cols[0].replace('_', ' ').title()[:25] + ("..." if len(numeric_cols[0]) > 25 else ""),
+                                "font": {"size": 13},
+                                "standoff": 20
+                            }
+                        },
+                        "yaxis": {
+                            "title": {
+                                "text": numeric_cols[1].replace('_', ' ').title()[:25] + ("..." if len(numeric_cols[1]) > 25 else ""),
+                                "font": {"size": 13},
+                                "standoff": 20
+                            }
+                        },
                         "height": 500
                     }
                 }
@@ -286,14 +414,34 @@ def health_check():
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat_query(chat_query: ChatQuery):
     try:
+        print(f"Processing query: {chat_query.query}")
+        
+        # Generate SQL query
         sql_query = generate_sql_from_query(chat_query.query)
+        print(f"Generated SQL: {sql_query}")
+        
+        # Execute SQL query
         data_df = execute_sql_query(sql_query)
+        print(f"Query returned {len(data_df)} rows")
+        
+        # Debug: Print column names and first few rows if data exists
+        if not data_df.empty:
+            print(f"Columns: {data_df.columns.tolist()}")
+            print(f"Sample data shape: {data_df.shape}")
+            if len(data_df) > 0:
+                print(f"First row sample: {data_df.iloc[0].to_dict()}")
+        else:
+            print("No data returned from SQL query")
         
         # Sample large datasets for better visualization
         sampled_data_df = sample_large_dataset(data_df, chat_query.query)
+        print(f"Sampled data: {len(sampled_data_df)} rows for visualization")
         
-        insights = generate_insights(chat_query.query, data_df)  # Use full data for insights
-        plotly_json = generate_visualization(chat_query.query, sampled_data_df)  # Use sampled data for visualization
+        # Generate insights using full data
+        insights = generate_insights(chat_query.query, data_df)
+        
+        # Generate visualization using sampled data
+        plotly_json = generate_visualization(chat_query.query, sampled_data_df)
         
         return ChatResponse(
             insights=insights,
@@ -302,4 +450,6 @@ def handle_chat_query(chat_query: ChatQuery):
         )
     except Exception as e:
         print(f"An error occurred in the chat endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
