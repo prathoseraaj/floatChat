@@ -6,6 +6,16 @@
 All colors MUST be HSL.
 */
 
+/* Landing Page Animations */
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.bg-radial-gradient {
+  background: radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.1) 100%);
+}
+
 @layer base {
   :root {
     /* Modern ocean-inspired background colors */
